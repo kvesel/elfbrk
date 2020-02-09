@@ -1,2 +1,24 @@
 # elfbrk
 ELF file format fuzzer and multi-tool
+
+elfbrk-0.1a elf file format fuzzer
+Usage: elfbrk <elf_file> [options]
+Options:
+  --help, -h, /?      show this message
+  --slack-count       enumerate available slack space
+  --patch             write slack patch to file (disabled)
+  --magic-patch       write elfbrk magic 0xBADC0DE0 patch
+     --magic-patch-reset     0x7F454C46 ("ELF<DEL>")
+     --magic-patch-slack     slack patch 0x90
+     --magic-patch-pk1       pkzip 0x0304 patch
+     --magic-patch-pk2       pkzip 0x0506 patch
+     --magic-patch-pk3       pkzip 0x0708 patch
+     --magic-patch-zb1       zipbrk 0x0304 patch
+     --magic-patch-zb2       zipbrk 0x0506 patch
+     --magic-patch-zb3       zipbrk 0x0708 patch
+     --magic-patch-dos       dos 0x4D5A patch (int 21h, int 03h)
+     --magic-patch-elf32     elf32 0x7F454C46 patch (reset)
+
+ex.
+  elfbrk /bin/ls --slack-count
+  elfbrk ./a.out --patch
