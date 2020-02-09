@@ -1,7 +1,7 @@
 # elfbrk
-<p>
 ELF file format fuzzer and multi-tool
 
+`
 elfbrk-0.1a elf file format fuzzer
 Usage: elfbrk <elf_file> [options]
 Options:
@@ -23,4 +23,4 @@ Options:
 ex.
   elfbrk /bin/ls --slack-count
   elfbrk ./a.out --patch
-  </p>
+`
