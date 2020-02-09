@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include "elfhdr.h"
+#include "elfbrk.h"
 
 unsigned long elf_hash(const unsigned char *name)
 {
