@@ -595,11 +595,7 @@ uint32_t magic_patch(FILE *target, Elf32_Ehdr *pe32hdr, uint16_t hdrlen, uint32_
 	uint32_t sig = 0;
 
 	/* magic patch elfbrk default */
-	if ( mode == EB_MAGICPATCH_SIG )
-	{
-		sig = htonl(EB_EBSIG);
-		printf("|  * Applying *magic patch* sig: 0x%.8X ...\n", EB_EBSIG);
-	}
+	if ( mode == EB_MAGICPATCH_SIG ) { sig = htonl(EB_EBSIG); printf("|  * Applying *magic patch* sig: 0x%.8X ...\n", EB_EBSIG); }
 	/* magic slack patch */
 	else if ( mode == EB_MAGICPATCH_SLACK )
 	{
@@ -608,57 +604,22 @@ uint32_t magic_patch(FILE *target, Elf32_Ehdr *pe32hdr, uint16_t hdrlen, uint32_
 		printf("|  * Applying *magic slack patch*: 0x90909090 ...\n");
 	}
 	/* reset magic patch sig */
-	else if ( mode == EB_MAGICPATCH_RESET )
-	{
-		sig = htonl(EB_RESETSIG);
-		printf("|  * Resetting *magic patch* sig: 0x%.8X ...\n", EB_RESETSIG);
-	}
-
+	else if ( mode == EB_MAGICPATCH_RESET ) { sig = htonl(EB_RESETSIG); printf("|  * Resetting *magic patch* sig: 0x%.8X ...\n", EB_RESETSIG); }
 
 
 	/* magic patch PKSIGx */
-	else if ( mode == EB_MAGICPATCH_PK1 )
-	{
-		sig = htonl(EB_PKSIG1);
-		printf("|  * Applying *magic pk1 patch* sig: 0x%.8X ...\n", EB_PKSIG1);
-	}
-	else if ( mode == EB_MAGICPATCH_PK2 )
-	{
-		sig = htonl(EB_PKSIG2);
-		printf("|  * Applying *magic pk2 patch* sig: 0x%.8X ...\n", EB_PKSIG2);
-	}
-	else if ( mode == EB_MAGICPATCH_PK3 )
-	{
-		sig = htonl(EB_PKSIG3);
-		printf("|  * Applying *magic pk3 patch* sig: 0x%.8X ...\n", EB_PKSIG3);
-	}
-
+	else if ( mode == EB_MAGICPATCH_PK1 ) { sig = htonl(EB_PKSIG1); printf("|  * Applying *magic pk1 patch* sig: 0x%.8X ...\n", EB_PKSIG1); }
+	else if ( mode == EB_MAGICPATCH_PK2 ) { sig = htonl(EB_PKSIG2); printf("|  * Applying *magic pk2 patch* sig: 0x%.8X ...\n", EB_PKSIG2); }
+	else if ( mode == EB_MAGICPATCH_PK3 ) { sig = htonl(EB_PKSIG3); printf("|  * Applying *magic pk3 patch* sig: 0x%.8X ...\n", EB_PKSIG3); }
 
 	/* magic patch ZBSIGx */
-	else if ( mode == EB_MAGICPATCH_ZB1 )
-	{
-		sig = htonl(EB_ZBSIG1);
-		printf("|  * Applying *magic zb1 patch* sig: 0x%.8X ...\n", EB_ZBSIG1);
-	}
-	else if ( mode == EB_MAGICPATCH_ZB2 )
-	{
-		sig = htonl(EB_ZBSIG2);
-		printf("|  * Applying *magic zb2 patch* sig: 0x%.8X ...\n", EB_ZBSIG2);
-	}
-	else if ( mode == EB_MAGICPATCH_ZB3 )
-	{
-		sig = htonl(EB_ZBSIG3);
-		printf("|  * Applying *magic zb3 patch* sig: 0x%.8X ...\n", EB_ZBSIG3);
-	}
-
-
+	else if ( mode == EB_MAGICPATCH_ZB1 ) { sig = htonl(EB_ZBSIG1); printf("|  * Applying *magic zb1 patch* sig: 0x%.8X ...\n", EB_ZBSIG1); }
+	else if ( mode == EB_MAGICPATCH_ZB2 ) { sig = htonl(EB_ZBSIG2); printf("|  * Applying *magic zb2 patch* sig: 0x%.8X ...\n", EB_ZBSIG2); }
+	else if ( mode == EB_MAGICPATCH_ZB3 ) { sig = htonl(EB_ZBSIG3); printf("|  * Applying *magic zb3 patch* sig: 0x%.8X ...\n", EB_ZBSIG3); }
 
 	/* magic patch DOSSIG */
-	else if ( mode == EB_MAGICPATCH_DOS )
-	{
-		sig = htonl(EB_DOSSIG);
-		printf("|  * Applying *magic dos patch* sig: 0x%.8X ...\n", EB_DOSSIG);
-	}
+	else if ( mode == EB_MAGICPATCH_DOS ) { sig = htonl(EB_DOSSIG); printf("|  * Applying *magic dos patch* sig: 0x%.8X ...\n", EB_DOSSIG); }
+
 
 	/* set and write patch */
 	memcpy(pe32hdr, &sig, sizeof(sig));
@@ -668,7 +629,6 @@ uint32_t magic_patch(FILE *target, Elf32_Ehdr *pe32hdr, uint16_t hdrlen, uint32_
 		fwrite(pe32hdr, hdrlen, 1, target);
 		fflush(target);
 	}
-	
 	return sig;
 }
 		
