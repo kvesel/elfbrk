@@ -1,21 +1,303 @@
-elfbrk-0.1a elf file format fuzzer
-Usage: elfbrk <elf_file> [options]
-Options:
-  --help, -h, /?      show this message
-  --slack-count       enumerate available slack space
-  --patch             write slack patch to file (disabled)
-  --magic-patch       write elfbrk magic 0xBADC0DE0 patch
-     --magic-patch-reset     0x7F454C46 ("ELF<DEL>")
-     --magic-patch-slack     slack patch 0x90
-     --magic-patch-pk1       pkzip 0x0304 patch
-     --magic-patch-pk2       pkzip 0x0506 patch
-     --magic-patch-pk3       pkzip 0x0708 patch
-     --magic-patch-zb1       zipbrk 0x0304 patch
-     --magic-patch-zb2       zipbrk 0x0506 patch
-     --magic-patch-zb3       zipbrk 0x0708 patch
-     --magic-patch-dos       dos 0x4D5A patch (int 21h, int 03h)
-     --magic-patch-elf32     elf32 0x7F454C46 patch (reset)
-
-ex.
-  elfbrk /bin/ls --slack-count
-  elfbrk ./a.out --patch
+.TH ELFBRK 1 "2026-05-11" "elfbrk 0.3a" "User Commands"
+.SH NAME
+elfbrk \- ELF32/ELF64 file format fuzzer, analyzer, and steganography tool
+.SH SYNOPSIS
+.B elfbrk
+.I elf_file
+.RI [ options\ .\|.\|. ]
+.SH DESCRIPTION
+.B elfbrk
+reads an ELF32 or ELF64 binary into memory and performs analysis or in-place
+modification depending on the flags supplied.
+Multiple flags can be combined in a single invocation.
+Analysis flags are read-only and safe on any file.
+Write flags modify the file in place \(em work on a copy.
+.PP
+Class (32-bit vs 64-bit) is auto-detected from
+.BR EI_CLASS .
+All offset and size arithmetic uses
+.B uint64_t
+internally to avoid overflow.
+Bounds checking is applied to every structure access before dereferencing.
+.SH OPTIONS
+.SS Analysis
+.TP
+.B \-\-help\fR, \fB\-h\fR, \fB/?
+Print a usage summary and exit.
+.TP
+.B \-\-phdr
+Walk and print all program headers (segments).
+Shows type, file offset, virtual/physical address, file size, memory size,
+flags, and alignment.
+.TP
+.B \-\-shdr
+Walk and print all section headers.
+Resolves section names from
+.IR .shstrtab .
+Shows index, name, type, address, file offset, size, flags, and alignment.
+.TP
+.B \-\-slack\-count
+Enumerate every location in the file where data can be hidden without
+affecting execution.
+Shows hex content for each region and prints a category summary at the end.
+.RS
+.TP 14
+.B [ehdr]
+.BR EI_OSABI ,
+.BR EI_ABIVERSION ,
+.B EI_PAD
+(9 bytes),
+.B e_version
+(4 bytes),
+.B e_flags
+if zero.
+.TP
+.B [phdr]
+.B p_paddr
+per segment \(em physical address field, ignored by the kernel on all
+virtual-memory OSes.
+.TP
+.B [phdr]
+.B PT_NOTE
+segment content \(em kernel maps but never validates.
+.TP
+.B [shdr]
+.BR sh_link ,
+.BR sh_info ,
+.B sh_entsize
+on sections where the loader does not use those fields.
+.TP
+.B [gap]
+Alignment padding between sections in the file.
+.TP
+.B [over]
+Bytes past the last section / table (EOF overlay).
+.RE
+.TP
+.B \-\-paddr\-read
+Hex dump every
+.B p_paddr
+field from all program headers.
+.TP
+.BI \-\-paddr\-read\-file \ file
+Extract all
+.B p_paddr
+bytes \(em concatenated in segment order \(em and write them raw to
+.IR file .
+Symmetric with
+.BR \-\-paddr\-write\-file .
+.TP
+.BI \-\-slack\-read\-file \ file
+Collect every slack region, read their bytes in file-offset order, and write
+the concatenated result to
+.IR file .
+Always produces the same number of bytes as the total slack capacity.
+Symmetric with
+.BR \-\-slack\-write\-file .
+.SS Steganography \(em p_paddr fields
+.TP
+.BI \-\-paddr\-write \ hexstring
+Pack bytes from a hex string across the
+.B p_paddr
+fields of the program headers in order.
+.B p_paddr
+is ignored by the kernel on any OS with virtual memory.
+Bytes are packed left-to-right; the last partially-filled field is
+zero-padded.
+Accepts bare pairs or colon-, dash-, or space-separated bytes.
+Total capacity is
+.RI ( e_phnum " \(mu 4)"
+bytes on ELF32,
+.RI ( e_phnum " \(mu 8)"
+bytes on ELF64.
+These bytes land in process memory at runtime because the phdr table is
+mapped by
+.BR PT_PHDR .
+.TP
+.BI \-\-paddr\-write\-file \ file
+Same as
+.B \-\-paddr\-write
+but reads the payload from
+.IR file .
+Useful for binary payloads such as shellcode, keys, or compressed data.
+.SS Steganography \(em slack regions
+.TP
+.BI \-\-slack\-write\-file \ file
+Write the contents of
+.I file
+into the binary's slack regions in file-offset order, scattering bytes
+across as many regions as needed.
+Reports payload size, total slack capacity, bytes written, overflow (if
+payload exceeds capacity), and unused bytes remaining.
+.PP
+.B \-\-slack\-write\-file
+and
+.B \-\-slack\-read\-file
+operate on the same regions in the same order.
+A write followed by a read recovers the payload exactly.
+.SS Section and note manipulation
+.TP
+.B \-\-shdr\-strip
+Zeros
+.BR e_shoff ,
+.BR e_shnum ,
+and
+.B e_shstrndx
+in the ELF header.
+The binary continues to execute normally \(em the kernel only uses the
+program header table at load time.
+Tools that depend on section headers
+.RB ( "readelf \-S" ,
+.BR objdump ,
+.BR gdb )
+lose all section visibility.
+.TP
+.BI \-\-note\-inject \ file
+Write the contents of
+.I file
+into the first
+.B PT_NOTE
+segment, bounded by that segment's
+.BR p_filesz .
+The segment header and surrounding structure are untouched.
+The binary continues to execute normally \(em the kernel maps PT_NOTE
+segments read-only but never validates their content.
+Reports bytes written and remaining capacity.
+.SS Debug section manipulation
+.TP
+.B \-\-debuglink\-corrupt
+Flips all bits in the CRC32 field of
+.IR .gnu_debuglink .
+GDB validates this CRC before loading a separate
+.B .debug
+file \(em a corrupted CRC causes it to silently refuse symbol loading.
+Prints the old and new CRC values.
+.TP
+.BI \-\-debuglink\-path \ path
+Replaces the filename string in
+.I .gnu_debuglink
+with
+.IR path .
+The new path must fit within the existing section (at most
+.I section_size\ \-\ 5
+bytes).
+The existing CRC is preserved at the new aligned offset.
+Use to redirect debuggers to a nonexistent or poisoned debug file.
+.TP
+.BI \-\-build\-id\-patch \ hexstring
+Overwrites the build ID descriptor bytes in
+.I .note.gnu.build-id
+with the supplied hex bytes.
+Build IDs are used by GDB,
+.BR eu-debuginfod ,
+and crash reporters to fetch matching debug info \(em a wrong ID breaks
+that chain.
+Prints old and new ID bytes.
+.TP
+.BI \-\-debug\-inject \ section\ file
+Writes the contents of
+.I file
+into the named section, bounded by that section's size.
+Remainder is zero-padded.
+Works on any section by name.
+Intended for injecting malformed or misleading DWARF into
+.IR .debug_info ,
+.IR .debug_line ,
+etc.
+The binary continues to execute normally.
+.TP
+.B \-\-debug\-zero
+Zeroes the content of every section whose name starts with
+.IR .debug_ .
+Section headers are left intact so the binary still appears to have debug
+sections, but their content is gone.
+Confuses tools such as Valgrind, perf, and sanitizers that consume DWARF
+directly rather than through GDB.
+.SS Magic patch
+Overwrite the first 4 bytes of the ELF header
+.RB ( "e_ident[0..3]" )
+with an alternate signature.
+Useful for bypassing naive file-type detection.
+.PP
+.TS
+l l l .
+\fB\-\-magic\-patch\fR	0xBADC0DE0	elfbrk signature
+\fB\-\-magic\-patch\-reset\fR	0x7F454C46	restore ELF magic
+\fB\-\-magic\-patch\-slack\fR	0x90909090	NOP sled pattern
+\fB\-\-magic\-patch\-pk1\fR	0x504B0304	ZIP local file header
+\fB\-\-magic\-patch\-pk2\fR	0x504B0506	ZIP end of central directory
+\fB\-\-magic\-patch\-pk3\fR	0x504B0708	ZIP data descriptor
+\fB\-\-magic\-patch\-zb1\fR	0x4D530304	zipbrk variant 1
+\fB\-\-magic\-patch\-zb2\fR	0x4D530506	zipbrk variant 2
+\fB\-\-magic\-patch\-zb3\fR	0x4D530708	zipbrk variant 3
+\fB\-\-magic\-patch\-dos\fR	0x4D5A4CCC	DOS MZ header
+.TE
+.SH OUTPUT FORMAT
+All output uses a pipe-bordered style
+.RB ( "|  ..." ).
+The ELF header dump is always printed at the end of every run reflecting
+the current on-disk state.
+.B Total Slack Space
+is reported in the summary block when
+.B \-\-slack\-count
+is passed.
+.SH NOTES
+.IP \(bu 3
+ELF32 and ELF64 are both supported.
+Class is auto-detected from
+.BR EI_CLASS .
+.IP \(bu 3
+The section header table is not used by the kernel at load time.
+.B \-\-shdr\-strip
+and the
+.B [shdr]
+entries in
+.B \-\-slack\-count
+exploit this.
+.IP \(bu 3
+.B p_paddr
+fields are inside the mapped
+.B PT_PHDR
+segment \(em payload written there is present in process memory at runtime
+without touching the file again.
+.IP \(bu 3
+.B \-\-slack\-read\-file
+and
+.B \-\-slack\-write\-file
+use a fixed region ordering (sorted by file offset) so they are always
+symmetric regardless of what has been written.
+.IP \(bu 3
+No dependencies beyond libc.
+Build with:
+.B gcc \-Wall \-Wextra \-o elfbrk elfbrk.c
+.SH EXAMPLES
+.TP
+Print all program headers:
+.B elfbrk ./binary \-\-phdr
+.TP
+Enumerate slack space with hex content:
+.B elfbrk ./binary \-\-slack\-count
+.TP
+Hide a payload in p_paddr fields:
+.B elfbrk ./binary \-\-paddr\-write deadbeefcafebabe
+.TP
+Scatter a file across all slack regions:
+.B elfbrk ./binary \-\-slack\-write\-file payload.bin
+.TP
+Recover it:
+.B elfbrk ./binary \-\-slack\-read\-file recovered.bin
+.TP
+Corrupt the debug link CRC and strip section headers:
+.B elfbrk ./binary \-\-debuglink\-corrupt \-\-shdr\-strip
+.TP
+Disguise as a ZIP file then restore:
+.EX
+elfbrk ./binary \-\-magic\-patch\-pk1
+elfbrk ./binary \-\-magic\-patch\-reset
+.EE
+.SH SEE ALSO
+.BR readelf (1),
+.BR objdump (1),
+.BR gdb (1),
+.BR file (1),
+.BR eu-readelf (1)
