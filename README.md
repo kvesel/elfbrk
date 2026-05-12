@@ -20,7 +20,7 @@ Multiple flags can be combined in a single invocation. Analysis flags are read-o
 
 ---
 
-## Analysis flags
+## Analysis
 
 ### `--phdr`
 Walk and print all program headers (segments). Shows type, file offset, virtual/physical address, file size, memory size, flags, and alignment. Supports ELF32 and ELF64.
@@ -37,7 +37,7 @@ elfbrk ./binary --shdr
 ```
 
 ### `--slack-count`
-Enumerate every location in the file where data can be hidden without affecting execution. Lists each region with its file offset and byte count, then prints a category summary and total.
+Enumerate every location in the file where data can be hidden without affecting execution. Shows the hex content of each region, then prints a category summary at the end.
 
 | Tag | Source |
 |-----|--------|
@@ -48,14 +48,20 @@ Enumerate every location in the file where data can be hidden without affecting 
 | `[gap]`  | Alignment padding between sections in the file |
 | `[over]` | Bytes past the last section / table (EOF overlay) |
 
-The total is also reported as `Total Slack Space` at the bottom of every run when this flag is passed.
-
 ```
 elfbrk ./binary --slack-count
 ```
 
+---
+
+## Steganography — `p_paddr` fields
+
+`p_paddr` (physical address) is ignored by the kernel on any OS with virtual memory. Because the program header table is mapped by `PT_PHDR`, bytes written to these fields are present in process memory at runtime without touching the file again.
+
+Total capacity: `e_phnum × 4` bytes (ELF32) or `e_phnum × 8` bytes (ELF64).
+
 ### `--paddr-read`
-Hex dump every `p_paddr` field from all program headers to stdout. Shows the file offset and raw bytes for each segment. Use this to inspect what is currently stored in those fields.
+Hex dump every `p_paddr` field from all program headers to stdout.
 
 ```
 elfbrk ./binary --paddr-read
@@ -68,20 +74,72 @@ Extract all `p_paddr` bytes — concatenated in segment order — and write them
 elfbrk ./binary --paddr-read-file recovered.bin
 ```
 
-### `--slack-read-file <file>`
-Collect every slack region (same set as `--stego-scan`), read their bytes in file-offset order, and write the concatenated result to `<file>`. Always produces the same number of bytes as the total slack capacity regardless of what was previously written there.
+### `--paddr-write <hexstring>`
+Pack bytes from a hex string across the `p_paddr` fields in order. Bytes are packed left-to-right; the last partially-filled field is zero-padded. Accepts bare pairs or colon/dash/space-separated bytes.
 
-Use this to extract a payload previously written with `--slack-write-file`.
+```
+elfbrk ./binary --paddr-write deadbeefcafebabe
+elfbrk ./binary --paddr-write "de:ad:be:ef:ca:fe:ba:be"
+elfbrk ./binary --paddr-write "de ad be ef"
+```
+
+### `--paddr-write-file <file>`
+Same as `--paddr-write` but reads the payload from a file. Use for binary payloads (shellcode, keys, compressed data).
+
+```
+elfbrk ./binary --paddr-write-file payload.bin
+```
+
+---
+
+## Steganography — slack regions
+
+`--slack-write-file` and `--slack-read-file` operate on the same regions in the same order (sorted by file offset). A write followed by a read recovers the payload exactly.
+
+### `--slack-read-file <file>`
+Collect every slack region, read their bytes in file-offset order, and write the concatenated result to `<file>`. Always produces the same number of bytes as the total slack capacity regardless of what was previously written there.
 
 ```
 elfbrk ./binary --slack-read-file recovered.bin
 ```
 
+### `--slack-write-file <file>`
+Write the contents of `<file>` into the binary's slack regions in file-offset order, scattering bytes across as many regions as needed.
+
+Reports:
+- Payload size
+- Total slack capacity and region count
+- Bytes written
+- **Overflow**: bytes that did not fit (if payload > capacity)
+- **Unused**: slack bytes remaining (if payload < capacity)
+
+```
+elfbrk ./binary --slack-write-file payload.bin
+```
+
 ---
 
-## Write flags
+## Section and note manipulation
 
-All write flags modify the file in place. The ELF header is printed at the end of every run reflecting the current on-disk state.
+### `--shdr-strip`
+Zeros `e_shoff`, `e_shnum`, and `e_shstrndx` in the ELF header. The binary continues to execute normally — the kernel only uses the program header table at load time. Tools that depend on section headers (`readelf -S`, `objdump`, `gdb`) lose all section visibility.
+
+```
+elfbrk ./binary --shdr-strip
+```
+
+### `--note-inject <file>`
+Write the contents of `<file>` into the first `PT_NOTE` segment, bounded by that segment's `p_filesz`. The segment header and surrounding structure are untouched. The binary continues to execute normally — the kernel maps PT_NOTE segments R-- but never validates their content.
+
+Reports bytes written and remaining capacity in the segment.
+
+```
+elfbrk ./binary --note-inject payload.bin
+```
+
+---
+
+## Debug section manipulation
 
 ### `--debuglink-corrupt`
 Flips all bits in the CRC32 field of `.gnu_debuglink`. GDB validates this CRC before loading a separate `.debug` file — a corrupted CRC causes it to silently refuse symbol loading. Prints the old and new CRC values.
@@ -105,7 +163,7 @@ elfbrk ./binary --build-id-patch deadbeefcafebabedeadbeefcafebabedeadbeef
 ```
 
 ### `--debug-inject <section> <file>`
-Writes the contents of `<file>` into the named section, bounded by that section's size. Remainder is zero-padded. Works on any section by name — intended for injecting malformed or misleading DWARF into `.debug_info`, `.debug_line`, etc. Binary continues to execute normally.
+Writes the contents of `<file>` into the named section, bounded by that section's size. Remainder is zero-padded. Works on any section by name — intended for injecting malformed or misleading DWARF into `.debug_info`, `.debug_line`, etc. The binary continues to execute normally.
 
 ```
 elfbrk ./binary --debug-inject .debug_info payload.bin
@@ -117,58 +175,6 @@ Zeroes the content of every section whose name starts with `.debug_`. Section he
 ```
 elfbrk ./binary --debug-zero
 ```
-
-### `--shdr-strip`
-Zeros `e_shoff`, `e_shnum`, and `e_shstrndx` in the ELF header. The binary continues to execute normally — the kernel only uses the program header table at load time. Tools that depend on section headers (`readelf -S`, `objdump`, `gdb`) lose all section visibility.
-
-```
-elfbrk ./binary --shdr-strip
-```
-
-### `--note-inject <file>`
-Write the contents of `<file>` into the first `PT_NOTE` segment, bounded by that segment's `p_filesz`. The segment header and surrounding structure are untouched. The binary continues to execute normally — the kernel maps PT_NOTE segments R-- but never validates their content.
-
-Reports bytes written and remaining capacity in the segment.
-
-```
-elfbrk ./binary --note-inject payload.bin
-```
-
-### `--paddr-write <hexstring>`
-Pack bytes from a hex string across the `p_paddr` fields of the program headers in order. `p_paddr` (physical address) is ignored by the kernel on any OS with virtual memory. Bytes are packed left-to-right; the last partially-filled field is zero-padded.
-
-Accepts bare pairs, or colon/dash/space-separated:
-
-```
-elfbrk ./binary --paddr-write deadbeefcafebabe
-elfbrk ./binary --paddr-write "de:ad:be:ef:ca:fe:ba:be"
-elfbrk ./binary --paddr-write "de ad be ef"
-```
-
-Total capacity is `e_phnum × 4` bytes (ELF32) or `e_phnum × 8` bytes (ELF64). These bytes land in memory at runtime — the phdr table is mapped by `PT_PHDR`.
-
-### `--paddr-write-file <file>`
-Same as `--paddr-write` but reads the payload from a file. Use this for binary payloads (shellcode, keys, compressed data).
-
-```
-elfbrk ./binary --paddr-write-file payload.bin
-```
-
-### `--slack-write-file <file>`
-Write the contents of `<file>` into the binary's slack regions in file-offset order, scattering bytes across as many regions as needed. The entire modified buffer is flushed to disk.
-
-Reports:
-- Payload size
-- Total slack capacity and region count
-- Bytes written
-- **Overflow**: bytes that did not fit (if payload > capacity)
-- **Unused**: slack bytes remaining (if payload < capacity)
-
-```
-elfbrk ./binary --slack-write-file payload.bin
-```
-
-`--slack-write-file` and `--slack-read-file` operate on the same regions in the same order. A write followed by a read recovers the payload exactly.
 
 ---
 
@@ -198,7 +204,7 @@ elfbrk ./binary --magic-patch-reset  # restore
 
 ## Output format
 
-All output uses a pipe-bordered style (`|  ...`). The ELF header dump is always printed at the end of every run. `Total Slack Space` reflects bytes counted by `--slack-count` if that flag was passed.
+All output uses a pipe-bordered style (`|  ...`). The ELF header dump is always printed at the end of every run reflecting the current on-disk state. A slack summary block is appended when `--slack-count` is passed.
 
 ---
 
@@ -207,6 +213,6 @@ All output uses a pipe-bordered style (`|  ...`). The ELF header dump is always 
 - ELF32 and ELF64 are both supported. Class is auto-detected from `EI_CLASS`.
 - All offset and size arithmetic uses `uint64_t` internally to avoid overflow.
 - Bounds checking is applied to every structure access before dereferencing.
-- The section header table is not used by the kernel at load time. `--shdr-strip` and the `[shdr]` entries in `--stego-scan` exploit this.
+- The section header table is not used by the kernel at load time. `--shdr-strip` and the `[shdr]` entries in `--slack-count` exploit this.
 - `p_paddr` fields are inside the mapped `PT_PHDR` segment — payload written there is present in process memory at runtime without touching the file again.
 - `--slack-read-file` and `--slack-write-file` use a fixed region ordering (sorted by file offset) so they are always symmetric regardless of what has been written.
